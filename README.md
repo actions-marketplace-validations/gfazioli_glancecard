@@ -12,11 +12,11 @@ Daily SVG cards for your READMEs, rendered by GitHub Actions in your own reposit
 <br/>
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/examples/octoscope-dark.svg">
-  <img src="docs/examples/octoscope-light.svg" width="880" alt="A repository card for gfazioli/octoscope: commits in the last 30 days, twelve stat tiles, a year of commit activity, the weekly rhythm, languages and essentials, latest commits and releases, contributors">
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/gfazioli/gfazioli/master/glancecard/glancecard-dark.svg">
+  <img src="https://raw.githubusercontent.com/gfazioli/gfazioli/master/glancecard/glancecard-light.svg" width="880" alt="glancecard's own repository card, refreshed daily: commits in the last 30 days, twelve stat tiles, a year of commit activity, the weekly rhythm, languages and essentials, latest commits and releases, contributors">
 </picture>
 
-<sub>A repository card, snapshot of <a href="https://github.com/gfazioli/octoscope">gfazioli/octoscope</a>. It follows your GitHub theme.</sub>
+<sub>This repository's own card, rendered every day by <a href="https://github.com/gfazioli/gfazioli/blob/master/.github/workflows/glancecard.yml">the author's profile repository</a> with glancecard itself. It follows your GitHub theme.</sub>
 
 </div>
 
@@ -27,7 +27,58 @@ Daily SVG cards for your READMEs, rendered by GitHub Actions in your own reposit
 - **Both themes**: a dark and a light file per card, and a `<picture>` that shows the one matching the reader's GitHub theme.
 - **Refreshed by your own workflow**, on your schedule, with the token GitHub Actions already gives every run. The cards are plain files committed to your repository.
 
-## Quick start
+## Set it up in one paste
+
+Paste this into [Claude Code](https://claude.com/claude-code), [Codex](https://github.com/openai/codex) or any coding agent that can run a shell. Fill in the first line, or leave it. The agent needs the GitHub CLI (`gh`) signed in; it does the steps under *Set it up by hand* for you, and shows you every change before it pushes.
+
+```text
+Set up glancecard for me (https://github.com/gfazioli/glancecard): it renders SVG cards of my GitHub profile and of my repositories once a day, with a GitHub Action, for my READMEs.
+
+Repositories that get a card: <owner/name, owner/name — or leave this line as it is, and pick my 3 most-starred public repositories that are not forks>
+
+Use the gh CLI; if it is missing or not signed in, stop and tell me how to fix it. Show me every diff and wait for my OK before each push.
+
+1. Find my login with `gh api user --jq .login`. The cards will live in my profile repository, <login>/<login>: clone it into a temporary folder and note its default branch. If it does not exist, stop and ask me before creating it.
+
+2. Add .github/workflows/glancecard.yml with exactly this content, filling in my login, the repositories (one per line) and this machine's IANA time zone:
+
+   name: glancecard
+   on:
+     schedule:
+       - cron: "30 5 * * *"
+     workflow_dispatch:
+   permissions:
+     contents: write
+   jobs:
+     cards:
+       runs-on: ubuntu-latest
+       timeout-minutes: 10
+       steps:
+         - uses: actions/checkout@v7
+         - uses: gfazioli/glancecard@v0.1.0
+           with:
+             profile: <login>
+             repos: |
+               <owner/name>
+             time-zone: <zone>
+
+   Commit it as "ci: render glancecard cards" and push.
+
+3. Run it once with `gh workflow run glancecard.yml -R <login>/<login>`, follow it with `gh run watch`, and check that glancecard/profile-dark.svg is now on the default branch. If the run fails, show me its log and stop.
+
+4. Add my profile card to my profile README where it fits best (ask me if unsure), then commit and push:
+
+   <picture>
+     <source media="(prefers-color-scheme: dark)" srcset="glancecard/profile-dark.svg">
+     <img src="glancecard/profile-light.svg" width="880" alt="<login>'s GitHub activity">
+   </picture>
+
+5. For each repository above, open a pull request that adds its card right under the README's title, with the same <picture> pointing at https://raw.githubusercontent.com/<login>/<login>/<default branch>/glancecard/<name>-dark.svg and -light.svg. Don't merge them: give me their links.
+
+Change nothing else, and add no tokens or secrets: the workflow uses the token GitHub Actions already provides.
+```
+
+## Set it up by hand
 
 **1. Add a workflow** to the repository that will hold the cards — your profile repository (`<you>/<you>`) is a good home, since its README is the first one people see:
 
