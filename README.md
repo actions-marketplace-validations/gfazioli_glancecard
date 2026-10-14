@@ -63,7 +63,16 @@ Use the gh CLI; if it is missing or not signed in, stop and tell me how to fix i
                <owner/name>
              time-zone: <zone>
 
-   Commit it as "ci: render glancecard cards" and push.
+   Then make sure .github/dependabot.yml keeps the action up to date: if the file is missing, create it with exactly this; if it exists, add the github-actions entry to its updates:
+
+   version: 2
+   updates:
+     - package-ecosystem: github-actions
+       directory: /
+       schedule:
+         interval: weekly
+
+   Commit both as "ci: render glancecard cards" and push.
 
 3. Run it once with `gh workflow run glancecard.yml -R <login>/<login>`, follow it with `gh run watch`, and check that glancecard/profile-dark.svg is now on the default branch. If the run fails, show me its log and stop.
 
@@ -121,6 +130,24 @@ jobs:
 ```
 
 From another repository, point at the raw file instead: `https://raw.githubusercontent.com/<you>/<you>/main/glancecard/your-repo-dark.svg`. That way a project's own history gets no bot commits; the cards live, and refresh, in one place.
+
+## Staying up to date
+
+Your workflow runs the version its `uses:` line names, and keeps running it: the cards refresh every day, but the code that draws them changes only when you change that line. glancecard has no moving `v0` tag on purpose, so a new release never changes your cards behind your back.
+
+Let [Dependabot](https://docs.github.com/en/code-security/how-tos/secure-your-supply-chain/secure-your-dependencies/auto-update-actions) move it for you. With this file in the repository that runs the workflow, a new glancecard release becomes a pull request that bumps the `uses:` line; read the release notes in it, merge, and the next run draws with the new version:
+
+```yaml
+# .github/dependabot.yml
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+```
+
+Dependabot also follows a line pinned to a commit SHA with the version as a comment (`gfazioli/glancecard@<sha> # v0.1.0`), the safest way to pin an action that runs with a write token. To be told about releases without Dependabot, watch the repository for releases (*Watch → Custom → Releases*). The README embeds in your other repositories need nothing: they point at the files, not at a version.
 
 ## Inputs
 
