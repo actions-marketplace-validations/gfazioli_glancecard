@@ -97,6 +97,14 @@ Pinned tags only (`v0.1.0`, `v0.2.0`, …), no moving `v0` tag: users pin a vers
 SHA and Dependabot moves them. `package.json` `version` and `CHANGELOG.md`
 change in the release PR.
 
+CI's action job and the Pages build both read the author's profile, whose
+star histories take ~430 requests from a cold `.stars.json`, and the
+workflow token allows 1,000 an hour for the whole repository. Both cache the
+file (`actions/cache`), but a pull request's cache never reaches `main`, and
+an unused one is evicted after 7 days. On 2026-10-18 the 0.4.0 PR was merged
+an hour after its first cold PR run, so the push's CI and Pages builds
+(~860 together) had the hour to themselves.
+
 ## Conventions
 
 English everywhere in the repository. Conventional commits. No AI
