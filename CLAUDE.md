@@ -13,6 +13,9 @@ even `@actions/core`: the runner protocol is `INPUT_*` variables,
 - `src/svg.js` — drawing primitives bound to a palette; `src/theme.js` — the
   dark and light palettes and the shared stylesheet; `src/text.js` — glyph
   widths, `fit`, `wrap`; `src/time.js` — days and hours in a time zone.
+- `src/stars.js` — GitHub's star history for both cards, and the store that
+  keeps it in `<out-dir>/.stars.json` between runs, so a daily run reads the
+  newest page of each repository only.
 - `src/run.js` — what the CLI (`src/cli.js`) and the Action share.
 - `test/fixtures/` — recorded API data; `test/golden/` — the cards they must
   render to, byte for byte.
@@ -32,6 +35,20 @@ even `@actions/core`: the runner protocol is `INPUT_*` variables,
   validate an assertion by breaking what it protects.
 - **Dates are local days.** GitHub returns UTC and drops the author's offset;
   every day and hour goes through `clock(timeZone)`.
+- **The star history counts its days in Pacific time.**
+  `/repos/{owner}/{repo}/stargazers/history` names each week by its Sunday at
+  00:00 UTC, but `days[i]` is that Sunday plus `i` in America/Los_Angeles:
+  against the exact timestamps, 0 of 35 days differ in Pacific time and 23 in
+  UTC. It cannot be moved to the card's zone, so a star may sit a day off.
+  It answers 30 weeks a page whatever `per_page` asks, empty weeks included,
+  and counts only the stars still given, and not always all of them:
+  next-app-nextra-template's history adds up to 36 of its 37, for good. The
+  store (`src/stars.js`) trusts a kept history while it misses by what it
+  missed by before; held to the exact count, it would read that repository
+  in full every day. The stargazer list behind the old
+  star-history charts is for admins and collaborators only since July 2026,
+  so it is no substitute: the workflow token cannot read it for another
+  repository.
 
 ## The looks
 
@@ -46,7 +63,15 @@ season (`resolveLook`), in the card's time zone.
 
 `site/` is hand-authored HTML, CSS, one deferred script (`site.js`) and one
 module (`editor.js`), published by `.github/workflows/pages.yml` after
-`scripts/site.js build` renders the cards it shows. Five blocks in
+`scripts/site.js build` renders the cards it shows. The editor's card is
+drawn in the page by `preview.js`, which the build writes: the renderer's
+modules from `src/`, each in its own scope, in `PREVIEW_MODULES` order, and
+the author's data, loaded when the editor comes near the screen. A test
+holds it to `src/` byte for byte. It can bundle only what the modules do
+today, `import { … } from "./x.js";` on one line and `export function` or
+`export const`: anything else stops the build. The page keeps no other card
+of its own, but the build still writes every look's, because the README's
+Looks table and old release notes show them from there. Five blocks in
 `site/index.html` are copies that a test holds to their source: the springs
 (`scripts/springs.js`, the sibling sites' sampler), the one-paste prompt, the
 by-hand workflow and the README embed (the README's), and the publisher line
@@ -79,6 +104,14 @@ instrument (Lighthouse, the crawler check, the cost at rest and of a scroll).
 Pinned tags only (`v0.1.0`, `v0.2.0`, …), no moving `v0` tag: users pin a version or a
 SHA and Dependabot moves them. `package.json` `version` and `CHANGELOG.md`
 change in the release PR.
+
+CI's action job and the Pages build both read the author's profile, whose
+star histories take ~430 requests from a cold `.stars.json`, and the
+workflow token allows 1,000 an hour for the whole repository. Both cache the
+file (`actions/cache`), but a pull request's cache never reaches `main`, and
+an unused one is evicted after 7 days. On 2026-10-18 the 0.4.0 PR was merged
+an hour after its first cold PR run, so the push's CI and Pages builds
+(~860 together) had the hour to themselves.
 
 ## Conventions
 

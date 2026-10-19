@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.5.0 — 2026-10-18
+
+**Three ways to draw the stars, and a card you can try before you copy.**
+
+- `stars-chart` (CLI: `--stars-chart`) picks how both cards draw the stars: `steps`, the default and what 0.4.0 drew, the running total exactly; `smooth`, a soft line through it that still never turns back down; or `bars`, the new stars of each month (each week, under half a year), on their own axis.
+- The website's Looks section and its setup editor are one, Make it yours: the choices, the card they make, drawn in the page by glancecard's own renderer from the author's data, and the workflow and the embed to copy under it. It writes `stars-chart` too.
+
+## 0.4.0 — 2026-10-18
+
+**Every star.**
+
+- The repository card gains a Stars section under its year of commits: the running total of stars since the repository was created, with the last 30 days, the last year and the best week. It is part of `sections: all`, the default.
+- The profile card draws the same panel for the stars of all its public repositories, since the first one.
+- The data is GitHub's star history, public since August 2026; the stargazer list the old star-history charts read is now for admins and collaborators only.
+- `.stars.json` beside the cards keeps the histories read, committed with them: the first run takes up to a request for every 30 weeks of each repository's life, every run after one per repository.
+- `sections` without `stars` leaves out both panels and their requests.
+
 ## 0.3.0 — 2026-10-15
 
 **A year as a chart.**

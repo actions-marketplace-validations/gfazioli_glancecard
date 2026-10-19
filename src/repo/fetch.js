@@ -1,6 +1,7 @@
 // Everything a repository card needs from GitHub, as plain JSON: what the
 // model reads, and what a test fixture records.
 
+import { starStore } from "../stars.js";
 import { addDays, clock } from "../time.js";
 import { calendarStart } from "./model.js";
 
@@ -131,9 +132,11 @@ async function fetchTree(client, full, branch) {
 
 /**
  * Fetches a repository's card data. `now` and `timeZone` set how far back the
- * commit history goes: to the first day the calendar draws.
+ * commit history goes: to the first day the calendar draws. `stars` is the
+ * store the star history is read through (`src/stars.js`), true for one of
+ * its own, or false to leave it out.
  */
-export async function fetchRepo(client, full, { now = new Date(), timeZone = "UTC", maxCommits = 5000, allowPrivate = false } = {}) {
+export async function fetchRepo(client, full, { now = new Date(), timeZone = "UTC", maxCommits = 5000, allowPrivate = false, stars = true } = {}) {
   const [owner, name, extra] = String(full).split("/");
   if (!owner || !name || extra !== undefined) throw new Error(`"${full}" is not owner/name`);
   const repo = (await client.graphql(REPO_QUERY, { owner, name })).repository;
@@ -144,11 +147,12 @@ export async function fetchRepo(client, full, { now = new Date(), timeZone = "UT
   if (!repo.defaultBranchRef) throw new Error(`${full} has no commits yet`);
 
   const since = `${addDays(calendarStart(clock(timeZone).day(now)), -1)}T00:00:00Z`;
-  const [history, releases, contributors, tree] = await Promise.all([
+  const [history, releases, contributors, tree, starHistory] = await Promise.all([
     fetchHistory(client, owner, name, since, maxCommits),
     fetchReleases(client, owner, name),
     fetchContributors(client, `${owner}/${name}`),
     fetchTree(client, `${owner}/${name}`, repo.defaultBranchRef.name),
+    stars ? (stars === true ? starStore() : stars).history(client, `${owner}/${name}`, repo.stargazerCount) : null,
   ]);
-  return { kind: "repo", fetchedAt: new Date(now).toISOString(), repo, history, releases, contributors, tree };
+  return { kind: "repo", fetchedAt: new Date(now).toISOString(), repo, history, releases, contributors, tree, stars: starHistory };
 }

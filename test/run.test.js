@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { input, parseBool } from "../src/action.js";
-import { fileBases, fileNames, parseCalendar, parseCount, parseList, parseSections, parseThemes, renderCards } from "../src/run.js";
+import { fileBases, fileNames, parseCalendar, parseCount, parseList, parseSections, parseStarsChart, parseThemes, renderCards } from "../src/run.js";
 
 test("lists split on commas, spaces and newlines", () => {
   assert.deepEqual(parseList("a/b, c/d\n  e/f\n"), ["a/b", "c/d", "e/f"]);
@@ -22,10 +22,10 @@ test("themes: both, dark, light and the looks, in any mix", () => {
 });
 
 test("sections", () => {
-  assert.equal(parseSections("all").length, 8);
-  assert.equal(parseSections("").length, 8);
-  assert.deepEqual(parseSections("hero, code"), ["hero", "code"]);
-  assert.throws(() => parseSections("hero, stars"), /unknown section stars/);
+  assert.equal(parseSections("all").length, 9);
+  assert.equal(parseSections("").length, 9);
+  assert.deepEqual(parseSections("hero, stars"), ["hero", "stars"]);
+  assert.throws(() => parseSections("hero, forks"), /unknown section forks/);
 });
 
 test("calendar: a chart unless told grid", () => {
@@ -39,6 +39,20 @@ test("calendar: a chart unless told grid", () => {
 test("renderCards refuses an unknown calendar before it asks or writes anything", async () => {
   const outDir = path.join(tmpdir(), `glancecard-calendar-${process.pid}`);
   await assert.rejects(renderCards({ client: null, profile: "gfazioli", outDir, calendar: "bars" }), /unknown calendar bars/);
+  assert.equal(existsSync(outDir), false);
+});
+
+test("stars-chart: steps unless told smooth or bars", () => {
+  assert.equal(parseStarsChart(""), "steps");
+  assert.equal(parseStarsChart(undefined), "steps");
+  assert.equal(parseStarsChart(" Bars "), "bars");
+  assert.equal(parseStarsChart("smooth"), "smooth");
+  assert.throws(() => parseStarsChart("pie"), /unknown stars-chart pie \(choose from steps, smooth, bars\)/);
+});
+
+test("renderCards refuses an unknown stars-chart before it asks or writes anything", async () => {
+  const outDir = path.join(tmpdir(), `glancecard-stars-chart-${process.pid}`);
+  await assert.rejects(renderCards({ client: null, profile: "gfazioli", outDir, starsChart: "pie" }), /unknown stars-chart pie/);
   assert.equal(existsSync(outDir), false);
 });
 

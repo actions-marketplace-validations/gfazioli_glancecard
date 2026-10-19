@@ -40,13 +40,13 @@ test("a section left out is not drawn, and its partner takes the full width", ()
   const m = repoModel(fixture("octoscope"), { timeZone: "Europe/Rome" });
   const all = renderRepo(m, { theme: THEMES.dark });
   const some = renderRepo(m, { theme: THEMES.dark, sections: ["code"] });
-  for (const title of ["Activity", "Rhythm", "Latest commits", "Releases", "Contributors"]) {
+  for (const title of ["Activity", "Stars", "Rhythm", "Latest commits", "Releases", "Contributors"]) {
     assert.match(all, new RegExp(`>${title}<`));
     assert.doesNotMatch(some, new RegExp(`>${title}<`));
   }
   assert.match(some, /<rect x="24" y="\d+" width="832" height="\d+" rx="14" class="panel"\/>/, "Code alone spans the card");
   assert.ok(Number(some.match(/height="(\d+)"/)[1]) < Number(all.match(/height="(\d+)"/)[1]));
-  assert.deepEqual(REPO_SECTIONS.length, 8);
+  assert.deepEqual(REPO_SECTIONS.length, 9);
 });
 
 test("a capped history says so instead of undercounting in silence", () => {
@@ -83,7 +83,8 @@ test("a year is a chart by default, and GitHub's calendar when asked", () => {
     assert.doesNotMatch(grid, /class="chart-line"/);
     assert.equal(squares(grid), days + 5, "a square per day, and five in the legend");
   }
-  const axis = [...renderProfile(profile, { theme: THEMES.dark }).matchAll(/class="axis" text-anchor="end">(\d+)</g)].map((m) => m[1]);
+  // The contributions axis alone: the Stars panel has one of its own.
+  const axis = [...renderProfile(profile, { theme: THEMES.dark, stars: false }).matchAll(/class="axis" text-anchor="end">(\d+)</g)].map((m) => m[1]);
   assert.deepEqual(axis, ["0", "100", "200", "300", "400"]);
 });
 
@@ -94,3 +95,102 @@ test("an avatar is embedded when given and a placeholder drawn when not", () => 
   assert.match(withImage, /<image href="data:image\/png;base64,AAAA"/);
   assert.doesNotMatch(renderRepo(m, { theme: THEMES.dark }), /<image /);
 });
+
+// The stars line sampled along each of its curves: its y every 1/20 of the way.
+const starLine = (svg) => {
+  const d = svg.match(/<path d="([^"]+)" class="growth-line"/)?.[1];
+  assert.ok(d, "the stars line is drawn");
+  const ys = [...d.matchAll(/(-?[\d.]+) (-?[\d.]+)/g)].map((p) => Number(p[2]));
+  const samples = [ys[0]];
+  for (let i = 1; i + 2 < ys.length; i += 3) {
+    const [y0, y1, y2, y3] = [ys[i - 1], ys[i], ys[i + 1], ys[i + 2]];
+    for (let k = 1; k <= 20; k++) {
+      const t = k / 20;
+      samples.push((1 - t) ** 3 * y0 + 3 * (1 - t) ** 2 * t * y1 + 3 * (1 - t) * t ** 2 * y2 + t ** 3 * y3);
+    }
+  }
+  return samples;
+};
+
+test("the stars line only rises or holds, even across a jump", () => {
+  for (const name of ["octoscope", "react-switch-button"]) {
+    const svg = renderRepo(repoModel(fixture(name), { timeZone: "Europe/Rome" }), { theme: THEMES.dark });
+    const ys = starLine(svg);
+    // Higher on the card is a smaller y; the path's coordinates are rounded to 0.1 px.
+    assert.ok(ys.every((y, i) => i === 0 || y <= ys[i - 1] + 0.05), `${name}: the line turns back down`);
+  }
+});
+
+test("the stars panel names its counts, and a history under a year has no last year", () => {
+  const old = renderRepo(repoModel(fixture("react-switch-button"), { timeZone: "Europe/Rome" }), { theme: THEMES.dark });
+  assert.match(old, /class="caption" text-anchor="end">86 stars since Feb 2015</);
+  assert.match(old, /class="pill-k">Last year<tspan dx="5" class="pill-v">\+1</);
+  assert.match(old, /class="pill-k">Best week<tspan dx="5" class="pill-v">\+5 · Jan 2017</);
+  assert.match(old, />2016</);
+  const young = renderRepo(repoModel(fixture("octoscope"), { timeZone: "Europe/Rome" }), { theme: THEMES.dark });
+  assert.match(young, /class="pill-k">Last 30 days<tspan dx="5" class="pill-v">\+7</);
+  assert.doesNotMatch(young, /class="pill-k">Last year</);
+  assert.match(young, />May</);
+});
+
+test("a repository without stars, or without a history, says so in place of the chart", () => {
+  const data = fixture("octoscope");
+  const none = renderRepo(repoModel({ ...data, stars: [] }, { timeZone: "Europe/Rome" }), { theme: THEMES.dark });
+  assert.match(none, /class="excerpt">No stars yet\.</);
+  assert.doesNotMatch(none, /growth-line|stars-fill/);
+  const missing = renderRepo(repoModel({ ...data, stars: null }, { timeZone: "Europe/Rome" }), { theme: THEMES.dark });
+  assert.match(missing, /class="excerpt">GitHub returned no star history\.</);
+  const off = renderRepo(repoModel(data, { timeZone: "Europe/Rome" }), { theme: THEMES.dark, sections: ["hero"] });
+  assert.doesNotMatch(off, />Stars<|stars-fill/);
+});
+
+test("the profile card draws the stars of every public repository, unless told not to", () => {
+  const m = profileModel(fixture("profile-gfazioli"), { timeZone: "Europe/Rome" });
+  const svg = renderProfile(m, { theme: THEMES.dark });
+  assert.match(svg, new RegExp(`class="caption" text-anchor="end">${m.stars} stars since Mar 2011<`));
+  assert.match(svg, /class="pill-k">Best week<tspan dx="5" class="pill-v">\+45 · Nov 2025</);
+  assert.ok(starLine(svg).length > 1);
+  const without = renderProfile(m, { theme: THEMES.dark, stars: false });
+  // The panel's title, not the tile that counts the stars too.
+  assert.doesNotMatch(without, /growth-line|stars-fill|class="title disp"[^>]*>Stars</);
+  assert.ok(Number(without.match(/height="(\d+)"/)[1]) < Number(svg.match(/height="(\d+)"/)[1]));
+});
+
+test("the stars as bars: the new ones of each month, on their own axis, with no line", () => {
+  const m = repoModel(fixture("react-switch-button"), { timeZone: "Europe/Rome" });
+  const bars = renderRepo(m, { theme: THEMES.dark, sections: ["stars"], starsChart: "bars" });
+  const rects = [...bars.matchAll(/<rect x="[\d.]+" y="[\d.]+" width="[\d.]+" height="([\d.]+)" rx="[\d.]+" fill="#facc15"\/>/g)];
+  assert.ok(rects.length > 20, `${rects.length} bars`);
+  assert.match(bars, /class="axis">stars a month</);
+  assert.doesNotMatch(bars, /growth-line|stars-fill/);
+  // The chips count the same stars whatever the chart.
+  const steps = renderRepo(m, { theme: THEMES.dark, sections: ["stars"] });
+  const chips = (svg) => [...svg.matchAll(/class="pill-v">([^<]+)</g)].map((x) => x[1]);
+  assert.deepEqual(chips(bars), chips(steps));
+});
+
+test("the stars as a smooth line: fewer points than the steps, still only rising", () => {
+  const m = repoModel(fixture("octoscope"), { timeZone: "Europe/Rome" });
+  const curves = (svg) => svg.match(/<path d="([^"]+)" class="growth-line"/)[1].split(" C").length;
+  const smooth = renderRepo(m, { theme: THEMES.dark, sections: ["stars"], starsChart: "smooth" });
+  const steps = renderRepo(m, { theme: THEMES.dark, sections: ["stars"] });
+  assert.ok(curves(smooth) < curves(steps), `${curves(smooth)} curves against ${curves(steps)}`);
+  const ys = starLine(smooth);
+  assert.ok(ys.every((y, i) => i === 0 || y <= ys[i - 1] + 0.05), "the smooth line turns back down");
+});
+
+test("a short history's bars stay inside the plot", async () => {
+  const { kit } = await import("../src/svg.js");
+  const points = [
+    { day: "2026-10-07", total: 0 },
+    { day: "2026-10-08", total: 2 },
+    { day: "2026-10-16", total: 2 },
+    { day: "2026-10-17", total: 5 },
+  ];
+  const svg = kit(THEMES.dark).growthChart(points, 100, 50, 600, 100, "#facc15", "stars-fill", "bars");
+  const bars = [...svg.matchAll(/<rect x="([\d.]+)" y="[\d.]+" width="([\d.]+)"/g)].map((m) => Number(m[1]) + Number(m[2]));
+  assert.equal(bars.length, 2);
+  assert.ok(bars.every((right) => right <= 700 + 1e-9), `a bar ends at ${Math.max(...bars)}, past 700`);
+  assert.match(svg, /class="axis">stars a week</);
+});
+

@@ -1,6 +1,7 @@
 // The repository card: header, hero, twelve stat tiles, a year of commits (a
-// chart of daily counts, or GitHub's calendar), the weekly rhythm, languages
-// and essentials, latest commits and releases, contributors. Every section
+// chart of daily counts, or GitHub's calendar), the stars over the
+// repository's life, the weekly rhythm, languages and essentials, latest
+// commits and releases, contributors. Every section
 // but the header can be left out; when one of a side-by-side pair is, the
 // other takes the full width.
 
@@ -9,9 +10,9 @@ import { THEMES } from "../theme.js";
 import { compact, esc, excerpt, fit, full, plural, size, SLACK, textWidth, wrap } from "../text.js";
 import { age, ago, formatDay, MONTHS } from "../time.js";
 
-export const REPO_SECTIONS = ["hero", "tiles", "activity", "rhythm", "code", "commits", "releases", "contributors"];
+export const REPO_SECTIONS = ["hero", "tiles", "activity", "stars", "rhythm", "code", "commits", "releases", "contributors"];
 
-export function renderRepo(m, { theme = THEMES.dark, sections = REPO_SECTIONS, images = {}, calendar = "chart" } = {}) {
+export function renderRepo(m, { theme = THEMES.dark, sections = REPO_SECTIONS, images = {}, calendar = "chart", starsChart = "steps" } = {}) {
   const k = kit(theme);
   const A = theme.accent;
   const r = m.repo;
@@ -388,6 +389,7 @@ export function renderRepo(m, { theme = THEMES.dark, sections = REPO_SECTIONS, i
   if (on.has("hero")) add(hero(y));
   if (on.has("tiles")) add(k.tiles(tileItems, y, 6));
   if (on.has("activity")) add(activity(y));
+  if (on.has("stars")) add(k.starsPanel(m.stars, r.stargazerCount, y, m.today, starsChart));
   pair({ name: "rhythm", make: rhythm }, { name: "code", make: code });
   pair({ name: "commits", make: commits }, { name: "releases", make: releases });
   if (on.has("contributors")) add(contributors(y));
@@ -407,7 +409,7 @@ export function renderRepo(m, { theme = THEMES.dark, sections = REPO_SECTIONS, i
   <linearGradient id="spark" x1="0" y1="0" x2="0" y2="1">
     <stop offset="0" stop-color="${A.contributions}" stop-opacity="${theme.spark}"/>
     <stop offset="1" stop-color="${A.contributions}" stop-opacity="0"/>
-  </linearGradient>${k.tileGradients(tileItems.map((t) => t.color))}`;
+  </linearGradient>${on.has("stars") ? k.starsFill(m.stars, starsChart) : ""}${k.tileGradients(tileItems.map((t) => t.color))}`;
 
   return k.frame({ height, title: `${r.nameWithOwner} at a glance`, desc, defs, body: parts.join("\n"), contentTop, ledge: contentTop + 68 });
 }

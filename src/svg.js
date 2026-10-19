@@ -1,12 +1,12 @@
 // Drawing primitives shared by both cards, bound to a look: the frame and
 // its decorations, panels and their titles, pills that flow and wrap, icons,
-// the sparkline and the year chart.
+// the sparkline, the year chart, and the Stars panel.
 
 import { decorate } from "./decor.js";
 import { OCTICONS } from "./icons.js";
 import { alpha, display, styles } from "./theme.js";
-import { compact, esc, fit, textWidth } from "./text.js";
-import { MONTHS } from "./time.js";
+import { compact, esc, fit, full, plural, textWidth } from "./text.js";
+import { addDays, daysBetween, MONTHS } from "./time.js";
 
 export const W = 880;
 export const PAD = 24;
@@ -17,6 +17,13 @@ export const HALF = (IW - SECTION) / 2;
 
 /** How a year of days is drawn: a line of daily counts, or GitHub's calendar of squares. */
 export const CALENDARS = ["chart", "grid"];
+
+/**
+ * How the stars are drawn: their running total exactly, flat between the
+ * days they came on (steps), as a soft line through it (smooth), or the new
+ * ones of each month or week as bars.
+ */
+export const STARS_CHARTS = ["steps", "smooth", "bars"];
 
 /**
  * A value axis for counts up to `max`: a round step (1, 2 or 5 times a power
@@ -39,6 +46,38 @@ function smooth(pts, top, bottom) {
     const c1 = [p1[0] + (p2[0] - p0[0]) / 6, clamp(p1[1] + (p2[1] - p0[1]) / 6)];
     const c2 = [p2[0] - (p3[0] - p1[0]) / 6, clamp(p2[1] - (p3[1] - p1[1]) / 6)];
     d += ` C${c1[0].toFixed(1)} ${c1[1].toFixed(1)} ${c2[0].toFixed(1)} ${c2[1].toFixed(1)} ${p2[0].toFixed(1)} ${p2[1].toFixed(1)}`;
+  }
+  return d;
+}
+
+/**
+ * A path through `pts` (x increasing) that never turns back on itself: a
+ * running total drawn with it rises or holds, where a smooth curve would dip
+ * before a jump and overshoot after it (Steffen's monotone cubic).
+ */
+function monotone(pts) {
+  const n = pts.length;
+  const slope = (i) => (pts[i + 1][1] - pts[i][1]) / (pts[i + 1][0] - pts[i][0] || 1);
+  const tangents = pts.map((p, i) => {
+    if (i === 0 || i === n - 1) return null;
+    const h0 = p[0] - pts[i - 1][0];
+    const h1 = pts[i + 1][0] - p[0];
+    const s0 = slope(i - 1);
+    const s1 = slope(i);
+    const mid = (s0 * h1 + s1 * h0) / (h0 + h1 || 1);
+    return (Math.sign(s0) + Math.sign(s1)) * Math.min(Math.abs(s0), Math.abs(s1), 0.5 * Math.abs(mid)) || 0;
+  });
+  // The ends lean as far as the curve next to them allows.
+  if (n > 2) {
+    tangents[0] = (3 * slope(0) - tangents[1]) / 2;
+    tangents[n - 1] = (3 * slope(n - 2) - tangents[n - 2]) / 2;
+  } else {
+    tangents[0] = tangents[n - 1] = slope(0);
+  }
+  let d = `M${pts[0][0].toFixed(1)} ${pts[0][1].toFixed(1)}`;
+  for (let i = 0; i < n - 1; i++) {
+    const dx = (pts[i + 1][0] - pts[i][0]) / 3;
+    d += ` C${(pts[i][0] + dx).toFixed(1)} ${(pts[i][1] + dx * tangents[i]).toFixed(1)} ${(pts[i + 1][0] - dx).toFixed(1)} ${(pts[i + 1][1] - dx * tangents[i + 1]).toFixed(1)} ${pts[i + 1][0].toFixed(1)} ${pts[i + 1][1].toFixed(1)}`;
   }
   return d;
 }
@@ -159,6 +198,154 @@ export function kit(t) {
   <path d="${d}" class="chart-line" fill="none" stroke="${color}" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>`;
   }
 
+  /**
+   * A running total over time (`points` of { day, total }, oldest first),
+   * drawn as `chart` (STARS_CHARTS): a rising line over its area, filled
+   * with `fill`, or the new stars of each month (each week, under half a
+   * year) as bars on their own axis. The values sit on a left axis, and the
+   * years are named over their days (the months, under two years), from a
+   * dashed rule at their first day. At most one point per 4 px is drawn.
+   * The plot fills x…x+w and y…y+h; the names hang 18 px below it.
+   */
+  function growthChart(points, x, y, w, h, color, fill, chart = "steps") {
+    const start = points[0].day;
+    const last = points.at(-1).day;
+    const span = Math.max(1, daysBetween(start, last));
+    // The running total at the end of `day`: the points hold flat between them.
+    const totalAt = (day) => {
+      let v = 0;
+      for (const p of points) {
+        if (p.day > day) break;
+        v = p.total;
+      }
+      return v;
+    };
+    // Months over half a year, weeks under it: the bars' bins, and the smooth line's samples.
+    const bins = [];
+    if (span > 180) {
+      for (let d = `${start.slice(0, 7)}-01`; d <= last; ) {
+        const [yr, mo] = d.split("-").map(Number);
+        const next = `${mo === 12 ? yr + 1 : yr}-${String((mo % 12) + 1).padStart(2, "0")}-01`;
+        bins.push({ from: d < start ? start : d, to: next > last ? last : addDays(next, -1) });
+        d = next;
+      }
+    } else {
+      for (let d = start; d <= last; d = addDays(d, 7)) bins.push({ from: d, to: addDays(d, 6) > last ? last : addDays(d, 6) });
+    }
+    const counts = bins.map((b) => totalAt(b.to) - totalAt(addDays(b.from, -1)));
+
+    const { step, top } = ticks(chart === "bars" ? Math.max(0, ...counts) : points.at(-1).total);
+    const values = Array.from({ length: top / step + 1 }, (_, i) => i * step);
+    const labelW = Math.max(...values.map((v) => textWidth(compact(v), 10))) + 8;
+    const px = x + labelW;
+    const pw = w - labelW;
+    const at = (day) => px + (daysBetween(start, day) / span) * pw;
+    const level = (v) => y + h - (v / top) * h;
+
+    const rules = values
+      .map((v) => {
+        const ry = level(v).toFixed(1);
+        return `<line x1="${px}" y1="${ry}" x2="${x + w}" y2="${ry}" stroke="${t.track}"/><text x="${px - 8}" y="${(level(v) + 3.5).toFixed(1)}" class="axis" text-anchor="end">${compact(v)}</text>`;
+      })
+      .join("");
+
+    // Each period is named in the middle of its days, when they leave room
+    // for its name.
+    const years = span >= 730;
+    const firsts = [];
+    for (let d = start; d <= last; ) {
+      const [yr, mo] = d.split("-").map(Number);
+      const next = years ? `${yr + 1}-01-01` : `${mo === 12 ? yr + 1 : yr}-${String((mo % 12) + 1).padStart(2, "0")}-01`;
+      firsts.push({ day: d, name: years ? String(yr) : MONTHS[mo - 1] });
+      d = next;
+    }
+    const end = px + pw;
+    const periods = firsts
+      .map((f, n) => {
+        const from = at(f.day);
+        const to = n + 1 < firsts.length ? at(firsts[n + 1].day) : end;
+        const rule = n > 0 ? `<line x1="${from.toFixed(1)}" y1="${y}" x2="${from.toFixed(1)}" y2="${y + h}" stroke="${t.track}" stroke-dasharray="2 3"/>` : "";
+        const label = to - from >= textWidth(f.name, 10) + 4 ? `<text x="${((from + to) / 2).toFixed(1)}" y="${y + h + 18}" class="axis" text-anchor="middle">${f.name}</text>` : "";
+        return rule + label;
+      })
+      .join("");
+
+    if (chart === "bars") {
+      const bars = bins
+        .map((b, i) => {
+          if (!counts[i]) return "";
+          // The last bin ends a day past the plot's last day: held to its edge.
+          const bx = at(b.from);
+          const bw = Math.max(1.5, Math.min(at(addDays(b.to, 1)), end) - bx - 1.5);
+          const bh = Math.max(1.5, (counts[i] / top) * h);
+          return `<rect x="${bx.toFixed(1)}" y="${(y + h - bh).toFixed(1)}" width="${bw.toFixed(1)}" height="${bh.toFixed(1)}" rx="${Math.min(2, bw / 2).toFixed(1)}" fill="${color}"/>`;
+        })
+        .join("");
+      return `
+  ${rules}${periods}
+  <text x="${px}" y="${y - 10}" class="axis">stars a ${span > 180 ? "month" : "week"}</text>
+  <g class="growth-bars">${bars}</g>`;
+    }
+
+    // steps: every point, flat between starred days; smooth: the total at
+    // about 48 even steps across the history, so even a sparse one bends
+    // instead of stepping. Points beyond one per 4 px are folded into the
+    // last of their group, the running total at its end.
+    let source = points;
+    if (chart === "smooth") {
+      const every = Math.max(7, Math.ceil(span / 48));
+      source = [{ day: start, total: 0 }];
+      for (let d = addDays(start, every); d < last; d = addDays(d, every)) source.push({ day: d, total: totalAt(d) });
+      source.push({ day: last, total: totalAt(last) });
+    }
+    const group = Math.max(1, Math.ceil(source.length / Math.floor(pw / 4)));
+    const kept = source.filter((_, i) => i === 0 || i === source.length - 1 || i % group === 0);
+    const d = monotone(kept.map((p) => [at(p.day), level(p.total)]));
+    return `
+  ${rules}${periods}
+  <path d="${d} L${end.toFixed(1)} ${y + h} L${px} ${y + h} Z" fill="url(#${fill})"/>
+  <path d="${d}" class="growth-line" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`;
+  }
+
+  /**
+   * The Stars panel at `y`, across the card: the running total of `s` (a star
+   * history) under the `count` stars it ends at, with the stars of the last
+   * 30 days, of the last year once the history is a year old (younger, it
+   * would repeat the total), and of the best week; or a line saying why
+   * there is none, drawn as `chart` (STARS_CHARTS). Its line is filled with
+   * `starsFill`.
+   */
+  function starsPanel(s, count, y, today, chart = "steps") {
+    const A = t.accent;
+    const month = (day) => `${MONTHS[Number(day.slice(5, 7)) - 1]} ${day.slice(0, 4)}`;
+    const head = (h) => `
+  ${panel(PAD, y, IW, h)}
+  ${panelTitle(PAD, y, "star", A.yellow, "Stars", { x: PAD + IW - 18, text: `${plural(count, "star")}${s?.first ? ` since ${month(s.first)}` : ""}` })}`;
+    if (!s?.total) {
+      const h = 96;
+      return { h, svg: `${head(h)}
+  <text x="${PAD + 18}" y="${y + 70}" class="excerpt">${s ? "No stars yet." : "GitHub returned no star history."}</text>` };
+    }
+    const chips = flow(PAD + 18, y + 44, IW - 36, [
+      { label: "Last 30 days", value: `+${full(s.last30)}`, icon: "star", color: A.yellow },
+      ...(daysBetween(s.points[0].day, today) >= 365 ? [{ label: "Last year", value: `+${full(s.lastYear)}`, icon: "calendar", color: A.blue }] : []),
+      { label: "Best week", value: `+${full(s.best.count)} · ${month(s.best.day)}`, icon: "trophy", color: A.orange },
+    ]);
+    const h = 232;
+    return { h, svg: `${head(h)}
+  ${chips.svg}${growthChart(s.points, PAD + 18, y + 92, IW - 36, 102, A.yellow, "stars-fill", chart)}` };
+  }
+
+  /** The gradient under the Stars panel's line, for a history that draws one. */
+  const starsFill = (s, chart = "steps") =>
+    s?.total && chart !== "bars"
+      ? `
+  <linearGradient id="stars-fill" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="${t.accent.yellow}" stop-opacity="${t.spark}"/>
+    <stop offset="1" stop-color="${t.accent.yellow}" stop-opacity="0"/>
+  </linearGradient>`
+      : "";
+
   /** A round avatar, or a disc when the image could not be fetched. */
   function avatar(id, data, cx, cy, r, ring, ringWidth = 1) {
     const face = data
@@ -251,5 +438,5 @@ ${body}${decor.front ? `\n<g clip-path="url(#card)" aria-hidden="true">${decor.f
     return { svg, h: Math.ceil(items.length / cols) * (h + GAP) - GAP };
   }
 
-  return { t, icon, panel, panelTitle, disp, pill, flow, sparkline, yearChart, avatar, frame, tileGradients, tiles };
+  return { t, icon, panel, panelTitle, disp, pill, flow, sparkline, yearChart, growthChart, starsPanel, starsFill, avatar, frame, tileGradients, tiles };
 }
